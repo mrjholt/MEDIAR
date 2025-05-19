@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import os, sys
 from monai.inferers import sliding_window_inference
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../")))
 
@@ -31,8 +32,31 @@ class Predictor(BasePredictor):
             exp_name,
             algo_params,
         )
+
+        # pull out a pre-filtered list of absolute filepaths
+        self._file_list = getattr(self, "file_list", None)
+        if self._file_list:
+            # turn them into Path objs and only record their names
+            self._paths = [Path(p) for p in self._file_list]
+            self._name2path = {p.name: p for p in self._paths}
+            # override the img_names that BasePredictor just set from os.listdir()
+            self.img_names = list(self._name2path.keys())
+
         self.hflip_tta = HorizontalFlip()
         self.vflip_tta = VerticalFlip()
+
+    def _get_img_data(self, img_name):
+        """
+        Override BasePredictor._get_img_data so that if
+        self._file_list is given, we load from that exact path.
+        """
+        if self._file_list:
+            img_path = self._name2path[img_name]
+        else:
+            img_path = os.path.join(self.input_path, img_name)
+
+        img_data = self.pred_transforms(str(img_path))
+        return img_data.unsqueeze(0)
 
     @torch.no_grad()
     def _inference(self, img_data):
